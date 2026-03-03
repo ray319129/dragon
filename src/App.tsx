@@ -51,42 +51,35 @@ interface GameState {
   }[];
 }
 
-const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
-  const getCardImage = (c: Card | null) => {
-    if (!c) return "/input_file_0.png";
-    const { suit, value } = c;
-    
-    // Mapping logic based on provided assets
-    if (suit === "♣") {
-      if (value === 1) return "/input_file_10.png";
-      if (value === 11) return "/input_file_11.png";
-      if (value === 12) return "/input_file_13.png";
-      if (value === 13) return "/input_file_12.png";
-      return `/input_file_${value - 1}.png`;
-    }
-    if (suit === "♦") {
-      if (value === 1) return "/input_file_23.png";
-      if (value === 11) return "/input_file_24.png";
-      if (value === 12) return "/input_file_26.png";
-      if (value === 13) return "/input_file_25.png";
-      return `/input_file_${value + 12}.png`;
-    }
-    if (suit === "♥") {
-      if (value === 1) return "/input_file_36.png";
-      if (value === 11) return "/input_file_37.png";
-      if (value === 12) return "/input_file_39.png";
-      if (value === 13) return "/input_file_38.png";
-      return `/input_file_${value + 25}.png`;
-    }
-    if (suit === "♠") {
-      if (value === 1) return "/input_file_51.png";
-      if (value === 11) return "/input_file_52.png";
-      if (value === 12) return "/input_file_54.png";
-      if (value === 13) return "/input_file_53.png";
-      return `/input_file_${value + 40}.png`;
-    }
-    return "/input_file_0.png";
+const getCardImageUrl = (card: Card | null, flipped: boolean) => {
+  if (!flipped) return "input_file_0.png";
+  if (!card) return "";
+
+  const { suit, value } = card;
+  // Mapping suits to base indices
+  // Clubs: 1-13, Diamonds: 14-26, Hearts: 27-39, Spades: 42-54
+  const suitMap: Record<string, number> = {
+    "♣": 1,
+    "♦": 14,
+    "♥": 27,
+    "♠": 42
   };
+
+  const base = suitMap[suit];
+  if (base === undefined) return "";
+
+  if (value === 1) return `input_file_${base + 9}.png`; // Ace
+  if (value >= 2 && value <= 10) return `input_file_${base + value - 2}.png`;
+  if (value === 11) return `input_file_${base + 10}.png`; // Jack
+  if (value === 13) return `input_file_${base + 11}.png`; // King
+  if (value === 12) return `input_file_${base + 12}.png`; // Queen
+  return "";
+};
+
+const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
+  if (!card && flipped) return <div className={cn("w-24 h-36 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center text-white/20", className)}>?</div>;
+
+  const imageUrl = getCardImageUrl(card, flipped);
 
   return (
     <motion.div
@@ -95,19 +88,19 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
       transition={{ duration: 0.6, type: "spring" }}
       className={cn("relative w-24 h-36 preserve-3d", className)}
     >
-      {/* Front */}
-      <div className="absolute inset-0 backface-hidden rounded-xl shadow-lg overflow-hidden border border-gray-200">
+      {/* Front (or Back if not flipped) */}
+      <div className="absolute inset-0 backface-hidden rounded-xl overflow-hidden shadow-lg border border-white/10">
         <img 
-          src={getCardImage(card)} 
+          src={imageUrl} 
           alt={card ? `${card.suit}${card.value}` : "Card"} 
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
         />
       </div>
-      {/* Back */}
-      <div className="absolute inset-0 backface-hidden rounded-xl shadow-lg overflow-hidden border border-gray-200 rotate-y-180">
+      {/* Back (shown during flip animation) */}
+      <div className="absolute inset-0 backface-hidden rounded-xl overflow-hidden shadow-lg border border-white/10 rotate-y-180">
         <img 
-          src="/input_file_0.png" 
+          src="input_file_0.png" 
           alt="Card Back" 
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
