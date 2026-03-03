@@ -380,6 +380,7 @@ async function startServer() {
   });
 
   if (process.env.NODE_ENV !== "production") {
+    app.use(express.static("public"));
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
