@@ -133,6 +133,12 @@ export default function App() {
     socket.emit("nextTurn");
   };
 
+  const handleSkip = () => {
+    if (window.confirm("確定要跳過這一回合嗎？")) {
+      socket.emit("skipTurn");
+    }
+  };
+
   const handleReset = () => {
     if (window.confirm("確定要重置所有紀錄嗎？")) {
       socket.emit("resetGame");
@@ -196,18 +202,24 @@ export default function App() {
   const sameCards = state.currentCards.card1?.value === state.currentCards.card2?.value;
 
   return (
-    <div className="h-screen bg-stone-900 text-white flex flex-row overflow-hidden font-sans">
+    <div className="min-h-screen bg-stone-900 text-white flex flex-col lg:flex-row overflow-x-hidden font-sans">
       {/* Sidebar - Player List */}
-      <div className="w-64 bg-stone-800 border-r border-white/5 flex flex-col">
-        <div className="p-4 border-b border-white/5">
-          <div className="flex items-center gap-2 text-emerald-400 mb-1">
-            <Coins size={18} />
-            <span className="text-sm font-bold uppercase tracking-wider">當前彩池</span>
+      <div className="w-full lg:w-64 bg-stone-800 border-b lg:border-r border-white/5 flex flex-col shrink-0">
+        <div className="p-4 border-b border-white/5 flex lg:block items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-emerald-400 mb-1">
+              <Coins size={18} />
+              <span className="text-sm font-bold uppercase tracking-wider">當前彩池</span>
+            </div>
+            <div className="text-2xl lg:text-3xl font-mono font-bold">${state.pot}</div>
           </div>
-          <div className="text-3xl font-mono font-bold">${state.pot}</div>
+          <div className="lg:hidden flex items-center gap-2">
+            <Users size={18} className="text-stone-500" />
+            <span className="text-sm font-bold text-stone-500">{state.players.length}/10</span>
+          </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="flex-1 max-h-48 lg:max-h-none overflow-y-auto p-2 space-y-1">
           <div className="px-2 py-2 text-xs font-bold text-stone-500 uppercase tracking-widest flex items-center gap-2">
             <Users size={14} /> 玩家列表 ({state.players.length}/10)
           </div>
@@ -301,19 +313,19 @@ export default function App() {
         </div>
 
         {/* Cards Area */}
-        <div className="flex-1 flex items-center justify-center gap-8 p-8">
-          <div className="flex flex-col items-center gap-4">
-            <CardView card={state.currentCards.card1} />
-            <span className="text-xs font-bold text-stone-500 uppercase">第一張</span>
+        <div className="flex-1 flex items-center justify-center gap-4 lg:gap-8 p-4 lg:p-8">
+          <div className="flex flex-col items-center gap-2 lg:gap-4">
+            <CardView card={state.currentCards.card1} className="w-20 h-28 lg:w-24 lg:h-36" />
+            <span className="text-[10px] lg:text-xs font-bold text-stone-500 uppercase">第一張</span>
           </div>
 
-          <div className="flex flex-col items-center gap-4">
+          <div className="flex flex-col items-center gap-2 lg:gap-4">
             <div className="relative">
               <CardView 
                 card={state.currentCards.card3} 
                 flipped={state.currentCards.card3Flipped} 
                 className={cn(
-                  "scale-110",
+                  "w-20 h-28 lg:w-24 lg:h-36 scale-110",
                   isMyTurn && !state.currentCards.card3Flipped && state.currentCards.betAmount > 0 ? "cursor-pointer hover:scale-115 transition-transform" : ""
                 )}
               />
@@ -321,29 +333,29 @@ export default function App() {
                 <motion.div 
                   animate={{ scale: [1, 1.1, 1] }}
                   transition={{ repeat: Infinity, duration: 2 }}
-                  className="absolute -top-4 -right-4 bg-emerald-500 text-white p-2 rounded-full shadow-lg"
+                  className="absolute -top-3 -right-3 lg:-top-4 lg:-right-4 bg-emerald-500 text-white p-1.5 lg:p-2 rounded-full shadow-lg"
                 >
-                  <Info size={16} />
+                  <Info size={14} className="lg:w-4 lg:h-4" />
                 </motion.div>
               )}
             </div>
-            <span className="text-xs font-bold text-stone-500 uppercase">第三張</span>
+            <span className="text-[10px] lg:text-xs font-bold text-stone-500 uppercase">第三張</span>
           </div>
 
-          <div className="flex flex-col items-center gap-4">
-            <CardView card={state.currentCards.card2} />
-            <span className="text-xs font-bold text-stone-500 uppercase">第二張</span>
+          <div className="flex flex-col items-center gap-2 lg:gap-4">
+            <CardView card={state.currentCards.card2} className="w-20 h-28 lg:w-24 lg:h-36" />
+            <span className="text-[10px] lg:text-xs font-bold text-stone-500 uppercase">第二張</span>
           </div>
         </div>
 
         {/* Controls Overlay */}
-        <div className="p-8 bg-gradient-to-t from-stone-900 via-stone-900/80 to-transparent">
+        <div className="p-4 lg:p-8 bg-gradient-to-t from-stone-900 via-stone-900/80 to-transparent">
           <div className="max-w-2xl mx-auto">
             {state.gameState === "waiting" ? (
-              <div className="bg-stone-800/50 backdrop-blur-sm border border-white/5 p-8 rounded-3xl text-center">
-                <Users className="mx-auto text-stone-600 mb-4" size={48} />
-                <h3 className="text-xl font-bold mb-2">等待房主開始</h3>
-                <p className="text-stone-400">目前共有 {state.players.length} 位玩家在線</p>
+              <div className="bg-stone-800/50 backdrop-blur-sm border border-white/5 p-6 lg:p-8 rounded-3xl text-center">
+                <Users className="mx-auto text-stone-600 mb-4" size={32} />
+                <h3 className="text-lg lg:text-xl font-bold mb-2">等待房主開始</h3>
+                <p className="text-sm text-stone-400">目前共有 {state.players.length} 位玩家在線</p>
               </div>
             ) : (
               <AnimatePresence mode="wait">
@@ -353,22 +365,22 @@ export default function App() {
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -20 }}
-                    className="bg-stone-800 p-6 rounded-3xl shadow-2xl border border-emerald-500/30"
+                    className="bg-stone-800 p-4 lg:p-6 rounded-3xl shadow-2xl border border-emerald-500/30"
                   >
                     {!state.currentCards.card3Flipped ? (
-                      <div className="space-y-6">
+                      <div className="space-y-4 lg:space-y-6">
                         <div className="flex justify-between items-end">
                           <div>
-                            <h3 className="text-2xl font-bold text-emerald-400">輪到你了！</h3>
-                            <p className="text-stone-400">請輸入下注金額</p>
+                            <h3 className="text-xl lg:text-2xl font-bold text-emerald-400">輪到你了！</h3>
+                            <p className="text-xs lg:text-sm text-stone-400">請輸入下注金額</p>
                           </div>
                           <div className="text-right">
-                            <span className="text-xs text-stone-500 font-bold uppercase">可投範圍</span>
-                            <div className="text-lg font-mono">${state.bottomBet} ~ ${state.pot}</div>
+                            <span className="text-[10px] text-stone-500 font-bold uppercase">可投範圍</span>
+                            <div className="text-sm lg:text-lg font-mono">${state.bottomBet} ~ ${state.pot}</div>
                           </div>
                         </div>
 
-                        <div className="flex gap-4">
+                        <div className="flex flex-col sm:flex-row gap-3">
                           <input
                             type="number"
                             value={betInput}
@@ -376,29 +388,37 @@ export default function App() {
                             placeholder={`下注金額 (底注 ${state.bottomBet})`}
                             className="flex-1 bg-stone-700 border-none rounded-xl px-4 py-3 text-lg font-mono focus:ring-2 focus:ring-emerald-500"
                           />
-                          {sameCards ? (
-                            <div className="flex gap-2">
+                          <div className="flex gap-2">
+                            {sameCards ? (
+                              <>
+                                <button
+                                  onClick={() => handleBet("higher")}
+                                  className="flex-1 sm:flex-none bg-emerald-500 hover:bg-emerald-400 px-6 rounded-xl font-bold transition-all"
+                                >
+                                  猜大
+                                </button>
+                                <button
+                                  onClick={() => handleBet("lower")}
+                                  className="flex-1 sm:flex-none bg-blue-500 hover:bg-blue-400 px-6 rounded-xl font-bold transition-all"
+                                >
+                                  猜小
+                                </button>
+                              </>
+                            ) : (
                               <button
-                                onClick={() => handleBet("higher")}
-                                className="bg-emerald-500 hover:bg-emerald-400 px-6 rounded-xl font-bold transition-all"
+                                onClick={() => handleBet()}
+                                className="flex-1 sm:flex-none bg-emerald-500 hover:bg-emerald-400 px-8 rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all"
                               >
-                                猜大
+                                下注
                               </button>
-                              <button
-                                onClick={() => handleBet("lower")}
-                                className="bg-blue-500 hover:bg-blue-400 px-6 rounded-xl font-bold transition-all"
-                              >
-                                猜小
-                              </button>
-                            </div>
-                          ) : (
+                            )}
                             <button
-                              onClick={() => handleBet()}
-                              className="bg-emerald-500 hover:bg-emerald-400 px-8 rounded-xl font-bold shadow-lg shadow-emerald-500/20 transition-all"
+                              onClick={handleSkip}
+                              className="flex-1 sm:flex-none bg-stone-700 hover:bg-stone-600 px-6 rounded-xl font-bold transition-all text-stone-300"
                             >
-                              下注
+                              跳過
                             </button>
-                          )}
+                          </div>
                         </div>
                       </div>
                     ) : (

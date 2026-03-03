@@ -221,6 +221,16 @@ async function startServer() {
       startNewTurn();
     });
 
+    socket.on("skipTurn", () => {
+      const currentPlayer = players[currentTurnIndex];
+      if (socket.id !== currentPlayer?.id) return;
+      if (currentCards.card3Flipped) return; // Cannot skip after flipping
+
+      lastAction = `${currentPlayer.name} 選擇了跳過。`;
+      currentTurnIndex = (currentTurnIndex + 1) % players.length;
+      startNewTurn();
+    });
+
     socket.on("resetGame", () => {
       const player = players.find(p => p.id === socket.id);
       if (player?.isHost) {
