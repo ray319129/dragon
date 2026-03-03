@@ -21,6 +21,17 @@ db.exec(`
     name TEXT PRIMARY KEY,
     profit INTEGER DEFAULT 0
   );
+  CREATE TABLE IF NOT EXISTS game_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    playerName TEXT,
+    card1 TEXT,
+    card2 TEXT,
+    card3 TEXT,
+    betAmount INTEGER,
+    result INTEGER,
+    actionMsg TEXT
+  );
 `);
 
 async function startServer() {
@@ -77,6 +88,7 @@ async function startServer() {
   function resetStats() {
     db.prepare("DELETE FROM player_stats").run();
     db.prepare("DELETE FROM game_state").run();
+    db.prepare("DELETE FROM game_history").run();
     pot = 0;
     gameState = "waiting";
     currentTurnIndex = 0;
@@ -113,6 +125,7 @@ async function startServer() {
   }
 
   function broadcastState() {
+    const history = db.prepare("SELECT * FROM game_history ORDER BY id DESC LIMIT 50").all();
     const state = {
       players: players.map(p => ({ ...p, profit: getPlayerStats(p.name) })),
       spectators: spectators.map(s => ({ name: s.name })),
@@ -122,7 +135,8 @@ async function startServer() {
       gameState,
       currentCards,
       lastAction,
-      deckCount: deck.length
+      deckCount: deck.length,
+      history
     };
     io.emit("stateUpdate", state);
     saveState();
@@ -253,6 +267,20 @@ async function startServer() {
       pot -= result; // If result is negative, pot increases
       lastAction = actionMsg;
 
+      // Record History
+      db.prepare(`
+        INSERT INTO game_history (playerName, card1, card2, card3, betAmount, result, actionMsg)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        currentPlayer.name,
+        `${currentCards.card1.suit}${currentCards.card1.value}`,
+        `${currentCards.card2.suit}${currentCards.card2.value}`,
+        `${currentCards.card3.suit}${currentCards.card3.value}`,
+        bet,
+        result,
+        actionMsg
+      );
+
       if (pot <= 0) {
         pot = 0;
         gameState = "waiting";
@@ -277,8 +305,32 @@ async function startServer() {
       if (currentCards.card3Flipped) return; // Cannot skip after flipping
 
       lastAction = `${currentPlayer.name} 選擇了跳過。`;
+      
+      // Record History for skip
+      db.prepare(`
+        INSERT INTO game_history (playerName, card1, card2, card3, betAmount, result, actionMsg)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        currentPlayer.name,
+        `${currentCards.card1.suit}${currentCards.card1.value}`,
+        `${currentCards.card2.suit}${currentCards.card2.value}`,
+        null,
+        0,
+        0,
+        `${currentPlayer.name} 跳過了回合`
+      );
+
       currentTurnIndex = (currentTurnIndex + 1) % players.length;
       startNewTurn();
+    });
+
+    socket.on("settleProfits", () => {
+      const player = players.find(p => p.id === socket.id);
+      if (player?.isHost) {
+        db.prepare("UPDATE player_stats SET profit = 0").run();
+        lastAction = "房主已將所有玩家的籌碼結算歸零。";
+        broadcastState();
+      }
     });
 
     socket.on("resetGame", () => {

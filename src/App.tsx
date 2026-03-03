@@ -38,6 +38,17 @@ interface GameState {
   };
   lastAction: string;
   deckCount: number;
+  history: {
+    id: number;
+    timestamp: string;
+    playerName: string;
+    card1: string;
+    card2: string;
+    card3: string | null;
+    betAmount: number;
+    result: number;
+    actionMsg: string;
+  }[];
 }
 
 const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
@@ -148,8 +159,14 @@ export default function App() {
   };
 
   const handleReset = () => {
-    if (window.confirm("確定要重置所有紀錄嗎？")) {
+    if (window.confirm("確定要重置所有紀錄（包含彩池與牌組）嗎？")) {
       socket.emit("resetGame");
+    }
+  };
+
+  const handleSettle = () => {
+    if (window.confirm("確定要將所有玩家的籌碼（獲利）結算歸零嗎？")) {
+      socket.emit("settleProfits");
     }
   };
 
@@ -233,6 +250,23 @@ export default function App() {
   const isHost = myInfo?.isHost;
 
   const sameCards = state.currentCards.card1?.value === state.currentCards.card2?.value;
+
+  const showHistory = state.gameState === "waiting" || isSpectator || isHost;
+
+  const formatCard = (cardStr: string | null) => {
+    if (!cardStr) return "-";
+    // cardStr is like "♠1"
+    const suit = cardStr[0];
+    const val = parseInt(cardStr.slice(1));
+    const displayValue = (v: number) => {
+      if (v === 1) return "A";
+      if (v === 11) return "J";
+      if (v === 12) return "Q";
+      if (v === 13) return "K";
+      return v.toString();
+    };
+    return `${suit}${displayValue(val)}`;
+  };
 
   return (
     <div className="min-h-screen bg-stone-900 text-white flex flex-col lg:flex-row overflow-x-hidden font-sans">
@@ -325,19 +359,27 @@ export default function App() {
                 </button>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="flex flex-col gap-2">
                 <button
-                  onClick={handleSplit}
-                  className="bg-stone-700 hover:bg-stone-600 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                  onClick={handleSettle}
+                  className="w-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
                 >
-                  <Split size={14} /> 平分
+                  <Coins size={14} /> 籌碼結算歸零
                 </button>
-                <button
-                  onClick={handleReset}
-                  className="bg-red-500/20 hover:bg-red-500/30 text-red-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
-                >
-                  <RotateCcw size={14} /> 重置
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleSplit}
+                    className="bg-stone-700 hover:bg-stone-600 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                  >
+                    <Split size={14} /> 平分彩金
+                  </button>
+                  <button
+                    onClick={handleReset}
+                    className="bg-red-500/20 hover:bg-red-500/30 text-red-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1"
+                  >
+                    <RotateCcw size={14} /> 完全重置
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -413,6 +455,61 @@ export default function App() {
                 >
                   <Users size={16} /> 加入成為玩家
                 </button>
+              </div>
+            )}
+
+            {/* History Section */}
+            {showHistory && state.history.length > 0 && (
+              <div className="mb-6 bg-stone-800/80 backdrop-blur-md rounded-3xl border border-white/5 overflow-hidden shadow-2xl">
+                <div className="p-4 border-b border-white/5 flex items-center justify-between bg-stone-700/30">
+                  <h3 className="text-sm font-bold uppercase tracking-widest text-stone-400 flex items-center gap-2">
+                    <RotateCcw size={14} /> 歷史對局紀錄
+                  </h3>
+                  <span className="text-[10px] text-stone-500">最近 50 筆</span>
+                </div>
+                <div className="max-h-64 overflow-y-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 bg-stone-800 text-stone-500 uppercase font-bold border-b border-white/5">
+                      <tr>
+                        <th className="p-3">玩家</th>
+                        <th className="p-3">牌面</th>
+                        <th className="p-3">下注</th>
+                        <th className="p-3">結果</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-white/5">
+                      {state.history.map((h) => (
+                        <tr key={h.id} className="hover:bg-white/5 transition-colors">
+                          <td className="p-3 font-medium text-stone-300">{h.playerName}</td>
+                          <td className="p-3 font-mono">
+                            <span className="text-stone-400">{formatCard(h.card1)}</span>
+                            <span className="mx-1 text-stone-600">|</span>
+                            <span className="text-stone-400">{formatCard(h.card2)}</span>
+                            <span className="mx-1 text-stone-600">→</span>
+                            <span className={cn(
+                              "font-bold",
+                              h.result > 0 ? "text-emerald-400" : h.result < 0 ? "text-red-400" : "text-stone-500"
+                            )}>
+                              {formatCard(h.card3)}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-stone-400">${h.betAmount}</td>
+                          <td className="p-3">
+                            <div className={cn(
+                              "font-bold",
+                              h.result > 0 ? "text-emerald-500" : h.result < 0 ? "text-red-500" : "text-stone-500"
+                            )}>
+                              {h.result > 0 ? "+" : ""}{h.result}
+                            </div>
+                            <div className="text-[10px] text-stone-500 truncate max-w-[120px]" title={h.actionMsg}>
+                              {h.actionMsg}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
