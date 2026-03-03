@@ -36,6 +36,7 @@ async function startServer() {
 
   // Game Logic State
   let players: any[] = [];
+  let spectators: any[] = [];
   let pot = 0;
   let bottomBet = 10;
   let currentTurnIndex = 0;
@@ -93,6 +94,7 @@ async function startServer() {
   function broadcastState() {
     const state = {
       players: players.map(p => ({ ...p, profit: getPlayerStats(p.name) })),
+      spectators: spectators.map(s => ({ name: s.name })),
       pot,
       bottomBet,
       currentTurnIndex,
@@ -107,18 +109,43 @@ async function startServer() {
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
 
-    socket.on("join", (name) => {
+    socket.on("join", ({ name, role }) => {
+      if (role === "spectator") {
+        spectators.push({ id: socket.id, name });
+        broadcastState();
+        return;
+      }
+
       if (players.length >= 10) {
-        socket.emit("error", "Room full");
+        socket.emit("error", "房間已滿，請以旁觀者身份加入");
         return;
       }
       if (gameState === "playing" && pot > 0) {
-        socket.emit("error", "Game in progress");
+        socket.emit("error", "遊戲進行中，請先旁觀");
         return;
       }
 
       const isHost = players.length === 0;
       players.push({ id: socket.id, name, isHost });
+      broadcastState();
+    });
+
+    socket.on("joinAsPlayer", () => {
+      const spectatorIndex = spectators.findIndex(s => s.id === socket.id);
+      if (spectatorIndex === -1) return;
+
+      if (players.length >= 10) {
+        socket.emit("error", "房間已滿");
+        return;
+      }
+      if (gameState === "playing" && pot > 0) {
+        socket.emit("error", "遊戲進行中，請等待下一局");
+        return;
+      }
+
+      const spectator = spectators.splice(spectatorIndex, 1)[0];
+      const isHost = players.length === 0;
+      players.push({ id: socket.id, name: spectator.name, isHost });
       broadcastState();
     });
 
@@ -254,18 +281,24 @@ async function startServer() {
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
-      const index = players.findIndex(p => p.id === socket.id);
-      if (index !== -1) {
-        const wasHost = players[index].isHost;
-        players.splice(index, 1);
+      
+      // Check if it was a player
+      const playerIndex = players.findIndex(p => p.id === socket.id);
+      if (playerIndex !== -1) {
+        const wasHost = players[playerIndex].isHost;
+        players.splice(playerIndex, 1);
         if (wasHost && players.length > 0) {
           players[0].isHost = true;
         }
-        if (players.length === 0) {
-          // Optional: reset if no one left?
-        } else {
-          currentTurnIndex = currentTurnIndex % players.length;
-        }
+        currentTurnIndex = players.length > 0 ? currentTurnIndex % players.length : 0;
+        broadcastState();
+        return;
+      }
+
+      // Check if it was a spectator
+      const spectatorIndex = spectators.findIndex(s => s.id === socket.id);
+      if (spectatorIndex !== -1) {
+        spectators.splice(spectatorIndex, 1);
         broadcastState();
       }
     });

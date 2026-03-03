@@ -23,6 +23,7 @@ interface Card {
 
 interface GameState {
   players: Player[];
+  spectators: { name: string }[];
   pot: number;
   bottomBet: number;
   currentTurnIndex: number;
@@ -85,6 +86,7 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
 
 export default function App() {
   const [name, setName] = useState("");
+  const [role, setRole] = useState<"player" | "spectator">("player");
   const [joined, setJoined] = useState(false);
   const [state, setState] = useState<GameState | null>(null);
   const [betInput, setBetInput] = useState("");
@@ -110,9 +112,13 @@ export default function App() {
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      socket.emit("join", name.trim());
+      socket.emit("join", { name: name.trim(), role });
       setJoined(true);
     }
+  };
+
+  const handleJoinAsPlayer = () => {
+    socket.emit("joinAsPlayer");
   };
 
   const handleStart = () => {
@@ -179,11 +185,35 @@ export default function App() {
                 required
               />
             </div>
+            
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setRole("player")}
+                className={cn(
+                  "flex-1 py-2 rounded-xl text-sm font-bold transition-all border",
+                  role === "player" ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : "bg-stone-700 border-transparent text-stone-400"
+                )}
+              >
+                玩家身份
+              </button>
+              <button
+                type="button"
+                onClick={() => setRole("spectator")}
+                className={cn(
+                  "flex-1 py-2 rounded-xl text-sm font-bold transition-all border",
+                  role === "spectator" ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : "bg-stone-700 border-transparent text-stone-400"
+                )}
+              >
+                旁觀身份
+              </button>
+            </div>
+
             <button
               type="submit"
               className="w-full bg-emerald-500 hover:bg-emerald-400 text-white font-bold py-3 rounded-xl shadow-lg shadow-emerald-500/20 transition-all flex items-center justify-center gap-2"
             >
-              加入房間 <ArrowRight size={20} />
+              進入遊戲 <ArrowRight size={20} />
             </button>
           </form>
           {error && <p className="text-red-400 text-center mt-4 text-sm">{error}</p>}
@@ -197,6 +227,7 @@ export default function App() {
   const currentPlayer = state.players[state.currentTurnIndex];
   const isMyTurn = currentPlayer?.id === socket.id;
   const myInfo = state.players.find(p => p.id === socket.id);
+  const isSpectator = !myInfo;
   const isHost = myInfo?.isHost;
 
   const sameCards = state.currentCards.card1?.value === state.currentCards.card2?.value;
@@ -256,6 +287,21 @@ export default function App() {
               )}
             </div>
           ))}
+
+          {state.spectators.length > 0 && (
+            <>
+              <div className="px-2 py-2 mt-4 text-[10px] font-bold text-stone-500 uppercase tracking-widest">
+                旁觀者 ({state.spectators.length})
+              </div>
+              <div className="px-2 flex flex-wrap gap-1">
+                {state.spectators.map((s, i) => (
+                  <span key={i} className="text-[10px] bg-stone-700/50 text-stone-400 px-2 py-0.5 rounded-full border border-white/5">
+                    {s.name}
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
         </div>
 
         {isHost && (
@@ -351,6 +397,17 @@ export default function App() {
         {/* Controls Overlay */}
         <div className="p-4 lg:p-8 bg-gradient-to-t from-stone-900 via-stone-900/80 to-transparent">
           <div className="max-w-2xl mx-auto">
+            {isSpectator && (
+              <div className="mb-4 flex justify-center">
+                <button
+                  onClick={handleJoinAsPlayer}
+                  className="bg-emerald-500 hover:bg-emerald-400 px-6 py-2 rounded-full font-bold text-sm shadow-lg shadow-emerald-500/20 transition-all flex items-center gap-2"
+                >
+                  <Users size={16} /> 加入成為玩家
+                </button>
+              </div>
+            )}
+
             {state.gameState === "waiting" ? (
               <div className="bg-stone-800/50 backdrop-blur-sm border border-white/5 p-6 lg:p-8 rounded-3xl text-center">
                 <Users className="mx-auto text-stone-600 mb-4" size={32} />
