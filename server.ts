@@ -381,6 +381,8 @@ async function startServer() {
 
   // Serve static files from public folder
   app.use(express.static(path.join(process.cwd(), "public")));
+  // Serve images from the root image folder
+  app.use("/image", express.static(path.join(process.cwd(), "image")));
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
