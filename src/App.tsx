@@ -76,6 +76,25 @@ const getCardImageUrl = (card: Card | null, flipped: boolean) => {
   return `/image/${suitName}${valueStr}.png`;
 };
 
+const getCardDisplayName = (card: Card | null, flipped: boolean = true) => {
+  if (!card || !flipped) return "";
+  const suitMap: Record<string, string> = {
+    "♣": "梅花",
+    "♦": "方塊",
+    "♥": "紅心",
+    "♠": "黑桃"
+  };
+  const valueMap: Record<number, string> = {
+    1: "A",
+    11: "J",
+    12: "Q",
+    13: "K"
+  };
+  const suitName = suitMap[card.suit] || card.suit;
+  const valueName = valueMap[card.value] || card.value.toString();
+  return `${suitName}${valueName}`;
+};
+
 const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
   if (!card && flipped) return <div className={cn("w-24 h-36 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center text-white/20", className)}>?</div>;
 
@@ -425,11 +444,17 @@ export default function App() {
         {/* Cards Area */}
         <div className="flex-1 flex items-center justify-center gap-4 lg:gap-8 p-4 lg:p-8">
           <div className="flex flex-col items-center gap-2 lg:gap-4">
+            <span className="text-xs lg:text-sm font-bold text-emerald-400 h-5">
+              {getCardDisplayName(state.currentCards.card1)}
+            </span>
             <CardView card={state.currentCards.card1} className="w-20 h-28 lg:w-24 lg:h-36" />
             <span className="text-[10px] lg:text-xs font-bold text-stone-500 uppercase">第一張</span>
           </div>
 
           <div className="flex flex-col items-center gap-2 lg:gap-4">
+            <span className="text-xs lg:text-sm font-bold text-emerald-400 h-5">
+              {getCardDisplayName(state.currentCards.card3, state.currentCards.card3Flipped)}
+            </span>
             <div className="relative">
               <CardView 
                 card={state.currentCards.card3} 
@@ -453,6 +478,9 @@ export default function App() {
           </div>
 
           <div className="flex flex-col items-center gap-2 lg:gap-4">
+            <span className="text-xs lg:text-sm font-bold text-emerald-400 h-5">
+              {getCardDisplayName(state.currentCards.card2)}
+            </span>
             <CardView card={state.currentCards.card2} className="w-20 h-28 lg:w-24 lg:h-36" />
             <span className="text-[10px] lg:text-xs font-bold text-stone-500 uppercase">第二張</span>
           </div>
