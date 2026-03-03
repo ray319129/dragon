@@ -379,17 +379,20 @@ async function startServer() {
     });
   });
 
+  // Serve static files from public folder
+  app.use(express.static(path.join(process.cwd(), "public")));
+
   if (process.env.NODE_ENV !== "production") {
-    app.use(express.static("public"));
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, "dist")));
+    // In production, Vite copies public files to dist
+    app.use(express.static(path.join(process.cwd(), "dist")));
     app.get("*", (req, res) => {
-      res.sendFile(path.join(__dirname, "dist", "index.html"));
+      res.sendFile(path.join(process.cwd(), "dist", "index.html"));
     });
   }
 
