@@ -52,15 +52,40 @@ interface GameState {
 }
 
 const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
-  if (!card) return <div className={cn("w-24 h-36 border-2 border-dashed border-white/20 rounded-xl flex items-center justify-center text-white/20", className)}>?</div>;
-
-  const isRed = card.suit === "♥" || card.suit === "♦";
-  const displayValue = (val: number) => {
-    if (val === 1) return "A";
-    if (val === 11) return "J";
-    if (val === 12) return "Q";
-    if (val === 13) return "K";
-    return val.toString();
+  const getCardImage = (c: Card | null) => {
+    if (!c) return "/input_file_0.png";
+    const { suit, value } = c;
+    
+    // Mapping logic based on provided assets
+    if (suit === "♣") {
+      if (value === 1) return "/input_file_10.png";
+      if (value === 11) return "/input_file_11.png";
+      if (value === 12) return "/input_file_13.png";
+      if (value === 13) return "/input_file_12.png";
+      return `/input_file_${value - 1}.png`;
+    }
+    if (suit === "♦") {
+      if (value === 1) return "/input_file_23.png";
+      if (value === 11) return "/input_file_24.png";
+      if (value === 12) return "/input_file_26.png";
+      if (value === 13) return "/input_file_25.png";
+      return `/input_file_${value + 12}.png`;
+    }
+    if (suit === "♥") {
+      if (value === 1) return "/input_file_36.png";
+      if (value === 11) return "/input_file_37.png";
+      if (value === 12) return "/input_file_39.png";
+      if (value === 13) return "/input_file_38.png";
+      return `/input_file_${value + 25}.png`;
+    }
+    if (suit === "♠") {
+      if (value === 1) return "/input_file_51.png";
+      if (value === 11) return "/input_file_52.png";
+      if (value === 12) return "/input_file_54.png";
+      if (value === 13) return "/input_file_53.png";
+      return `/input_file_${value + 40}.png`;
+    }
+    return "/input_file_0.png";
   };
 
   return (
@@ -71,26 +96,22 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
       className={cn("relative w-24 h-36 preserve-3d", className)}
     >
       {/* Front */}
-      <div className={cn(
-        "absolute inset-0 backface-hidden bg-white rounded-xl shadow-lg flex flex-col justify-between p-2 border border-gray-200",
-        isRed ? "text-red-600" : "text-gray-900"
-      )}>
-        <div className="text-lg font-bold leading-none">
-          {displayValue(card.value)}
-          <br />
-          <span className="text-xl">{card.suit}</span>
-        </div>
-        <div className="text-3xl self-center">{card.suit}</div>
-        <div className="text-lg font-bold leading-none rotate-180">
-          {displayValue(card.value)}
-          <br />
-          <span className="text-xl">{card.suit}</span>
-        </div>
+      <div className="absolute inset-0 backface-hidden rounded-xl shadow-lg overflow-hidden border border-gray-200">
+        <img 
+          src={getCardImage(card)} 
+          alt={card ? `${card.suit}${card.value}` : "Card"} 
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+        />
       </div>
       {/* Back */}
-      <div className="absolute inset-0 backface-hidden bg-indigo-900 rounded-xl shadow-lg border-4 border-white flex items-center justify-center rotate-y-180">
-        <div className="w-full h-full opacity-20 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-white via-transparent to-transparent" />
-        <Trophy className="text-white/40 w-10 h-10" />
+      <div className="absolute inset-0 backface-hidden rounded-xl shadow-lg overflow-hidden border border-gray-200 rotate-y-180">
+        <img 
+          src="/input_file_0.png" 
+          alt="Card Back" 
+          className="w-full h-full object-cover"
+          referrerPolicy="no-referrer"
+        />
       </div>
     </motion.div>
   );
