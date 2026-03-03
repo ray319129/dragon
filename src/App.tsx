@@ -52,28 +52,28 @@ interface GameState {
 }
 
 const getCardImageUrl = (card: Card | null, flipped: boolean) => {
-  if (!flipped) return "input_file_0.png";
+  if (!flipped) return "/image/Background.png";
   if (!card) return "";
 
   const { suit, value } = card;
-  // Mapping suits to base indices
-  // Clubs: 1-13, Diamonds: 14-26, Hearts: 27-39, Spades: 42-54
-  const suitMap: Record<string, number> = {
-    "♣": 1,
-    "♦": 14,
-    "♥": 27,
-    "♠": 42
+  const suitNames: Record<string, string> = {
+    "♣": "Club",
+    "♦": "Diamond",
+    "♥": "Heart",
+    "♠": "Spade"
   };
 
-  const base = suitMap[suit];
-  if (base === undefined) return "";
+  const suitName = suitNames[suit];
+  if (!suitName) return "";
 
-  if (value === 1) return `input_file_${base + 9}.png`; // Ace
-  if (value >= 2 && value <= 10) return `input_file_${base + value - 2}.png`;
-  if (value === 11) return `input_file_${base + 10}.png`; // Jack
-  if (value === 13) return `input_file_${base + 11}.png`; // King
-  if (value === 12) return `input_file_${base + 12}.png`; // Queen
-  return "";
+  let valueStr: string;
+  if (value === 1) valueStr = "A";
+  else if (value === 11) valueStr = "J";
+  else if (value === 12) valueStr = "Q";
+  else if (value === 13) valueStr = "K";
+  else valueStr = value.toString();
+
+  return `/image/${suitName}${valueStr}.png`;
 };
 
 const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
@@ -100,7 +100,7 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
       {/* Back (shown during flip animation) */}
       <div className="absolute inset-0 backface-hidden rounded-xl overflow-hidden shadow-lg border border-white/10 rotate-y-180">
         <img 
-          src="input_file_0.png" 
+          src="/image/Background.png" 
           alt="Card Back" 
           className="w-full h-full object-cover"
           referrerPolicy="no-referrer"
