@@ -37,6 +37,7 @@ async function startServer() {
   // Game Logic State
   let players: any[] = [];
   let spectators: any[] = [];
+  let deck: any[] = [];
   let pot = 0;
   let bottomBet = 10;
   let currentTurnIndex = 0;
@@ -56,7 +57,7 @@ async function startServer() {
   }
 
   function saveState() {
-    const data = JSON.stringify({ pot, bottomBet, currentTurnIndex, gameState, currentCards });
+    const data = JSON.stringify({ pot, bottomBet, currentTurnIndex, gameState, currentCards, deck });
     db.prepare("INSERT OR REPLACE INTO game_state (id, data) VALUES (1, ?)").run(data);
   }
 
@@ -80,15 +81,35 @@ async function startServer() {
     gameState = "waiting";
     currentTurnIndex = 0;
     currentCards = { card1: null, card2: null, card3: null, card3Flipped: false };
+    deck = [];
     saveState();
   }
 
-  function drawCard() {
+  function createDeck() {
     const suits = ["♠", "♥", "♦", "♣"];
-    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]; // 1=A, 11=J, 12=Q, 13=K
-    const suit = suits[Math.floor(Math.random() * suits.length)];
-    const value = values[Math.floor(Math.random() * values.length)];
-    return { suit, value };
+    const values = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13];
+    const newDeck = [];
+    for (const suit of suits) {
+      for (const value of values) {
+        newDeck.push({ suit, value });
+      }
+    }
+    return newDeck;
+  }
+
+  function shuffle(array: any[]) {
+    for (let i = array.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+  }
+
+  function drawCard() {
+    if (deck.length === 0) {
+      deck = shuffle(createDeck());
+    }
+    return deck.pop();
   }
 
   function broadcastState() {
@@ -100,7 +121,8 @@ async function startServer() {
       currentTurnIndex,
       gameState,
       currentCards,
-      lastAction
+      lastAction,
+      deckCount: deck.length
     };
     io.emit("stateUpdate", state);
     saveState();
@@ -157,6 +179,7 @@ async function startServer() {
         players.forEach(p => updatePlayerProfit(p.name, -bottomBet));
         gameState = "playing";
         currentTurnIndex = 0;
+        deck = shuffle(createDeck());
         startNewTurn();
       }
     });

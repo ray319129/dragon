@@ -37,6 +37,7 @@ interface GameState {
     choice: "higher" | "lower" | null;
   };
   lastAction: string;
+  deckCount: number;
 }
 
 const CardView = ({ card, flipped = true, className = "" }: { card: Card | null; flipped?: boolean; className?: string }) => {
@@ -129,6 +130,7 @@ export default function App() {
     const amount = parseInt(betInput);
     if (!amount || amount < (state?.bottomBet || 10) || amount > (state?.pot || 0)) {
       setError("無效的下注金額");
+      setTimeout(() => setError(""), 3000);
       return;
     }
     socket.emit("placeBet", { amount, choice });
@@ -355,6 +357,12 @@ export default function App() {
           <div className="text-right">
             <div className="text-stone-500 text-xs font-bold uppercase tracking-widest mb-1">底注</div>
             <div className="text-xl font-mono">${state.bottomBet}</div>
+            {state.gameState === "playing" && (
+              <div className="mt-2">
+                <div className="text-stone-500 text-[10px] font-bold uppercase tracking-widest mb-1">剩餘牌數</div>
+                <div className="text-sm font-mono text-stone-400">{state.deckCount} / 52</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -436,6 +444,56 @@ export default function App() {
                             <div className="text-sm lg:text-lg font-mono">${state.bottomBet} ~ ${state.pot}</div>
                           </div>
                         </div>
+
+                        {/* Probability Helper */}
+                        {state.currentCards.card1 && state.currentCards.card2 && (
+                          <div className="bg-stone-900/50 rounded-xl p-3 border border-white/5">
+                            <div className="text-[10px] font-bold text-stone-500 uppercase mb-2 flex items-center gap-1">
+                              <Info size={12} /> 勝率分析 (機率僅供參考)
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {sameCards ? (
+                                <>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">猜大</div>
+                                    <div className="text-sm font-bold text-emerald-400">
+                                      {Math.round(((13 - state.currentCards.card1.value) / 13) * 100)}%
+                                    </div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">猜小</div>
+                                    <div className="text-sm font-bold text-blue-400">
+                                      {Math.round(((state.currentCards.card1.value - 1) / 13) * 100)}%
+                                    </div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">撞柱</div>
+                                    <div className="text-sm font-bold text-red-400">7.7%</div>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">射門成功</div>
+                                    <div className="text-sm font-bold text-emerald-400">
+                                      {Math.round((Math.max(0, Math.abs(state.currentCards.card1.value - state.currentCards.card2.value) - 1) / 13) * 100)}%
+                                    </div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">射偏</div>
+                                    <div className="text-sm font-bold text-stone-400">
+                                      {Math.round(((13 - (Math.abs(state.currentCards.card1.value - state.currentCards.card2.value) + 1)) / 13) * 100)}%
+                                    </div>
+                                  </div>
+                                  <div className="text-center">
+                                    <div className="text-[10px] text-stone-400">撞柱風險</div>
+                                    <div className="text-sm font-bold text-red-400">15.4%</div>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
 
                         <div className="flex flex-col sm:flex-row gap-3">
                           <input
