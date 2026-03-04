@@ -131,6 +131,7 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
 
 export default function App() {
   const [name, setName] = useState("");
+  const [roomId, setRoomId] = useState("Room 1");
   const [role, setRole] = useState<"player" | "spectator">("player");
   const [joined, setJoined] = useState(false);
   const [state, setState] = useState<GameState | null>(null);
@@ -157,7 +158,7 @@ export default function App() {
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      socket.emit("join", { name: name.trim(), role });
+      socket.emit("join", { name: name.trim(), role, roomId });
       setJoined(true);
     }
   };
@@ -225,18 +226,34 @@ export default function App() {
             <p className="text-stone-400 mt-2">輸入名稱加入遊戲</p>
           </div>
 
-          <form onSubmit={handleJoin} className="space-y-4">
-            <div>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="你的大名"
-                className="w-full bg-stone-700 border-none rounded-xl px-4 py-3 text-white placeholder-stone-500 focus:ring-2 focus:ring-emerald-500 transition-all"
-                maxLength={10}
-                required
-              />
-            </div>
+            <form onSubmit={handleJoin} className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-stone-500 uppercase mb-1 block">選擇房間</label>
+                <div className="grid grid-cols-3 gap-2 mb-4">
+                  {["Room 1", "Room 2", "Room 3"].map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setRoomId(id)}
+                      className={cn(
+                        "py-2 rounded-xl text-xs font-bold transition-all border",
+                        roomId === id ? "bg-emerald-500/20 border-emerald-500 text-emerald-400" : "bg-stone-700 border-transparent text-stone-400"
+                      )}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="你的大名"
+                  className="w-full bg-stone-700 border-none rounded-xl px-4 py-3 text-white placeholder-stone-500 focus:ring-2 focus:ring-emerald-500 transition-all"
+                  maxLength={10}
+                  required
+                />
+              </div>
             
             <div className="flex gap-2">
               <button

@@ -15,7 +15,7 @@ const db = new Database("game.db");
 // Initialize DB
 db.exec(`
   CREATE TABLE IF NOT EXISTS game_state (
-    id INTEGER PRIMARY KEY,
+    room_id TEXT PRIMARY KEY,
     data TEXT
   );
   CREATE TABLE IF NOT EXISTS player_stats (
@@ -24,6 +24,7 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS game_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    room_id TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     playerName TEXT,
     card1 TEXT,
@@ -46,33 +47,56 @@ async function startServer() {
 
   const PORT = 3000;
 
-  // Game Logic State
-  let players: any[] = [];
-  let spectators: any[] = [];
-  let deck: any[] = [];
-  let pot = 0;
-  let bottomBet = 10;
-  let currentTurnIndex = 0;
-  let nextGameStartIndex = 0;
-  let gameState: "waiting" | "playing" = "waiting";
-  let currentCards: any = { card1: null, card2: null, card3: null, card3Flipped: false };
-  let lastAction: string = "";
+  // Game Logic State per Room
+  const rooms: Record<string, any> = {
+    "Room 1": createInitialRoomState("Room 1"),
+    "Room 2": createInitialRoomState("Room 2"),
+    "Room 3": createInitialRoomState("Room 3"),
+  };
 
-  // Load state from DB if exists
-  const savedState = db.prepare("SELECT data FROM game_state WHERE id = 1").get() as any;
-  if (savedState) {
-    const data = JSON.parse(savedState.data);
-    pot = data.pot;
-    bottomBet = data.bottomBet;
-    currentTurnIndex = data.currentTurnIndex;
-    nextGameStartIndex = data.nextGameStartIndex || 0;
-    gameState = data.gameState;
-    currentCards = data.currentCards;
+  function createInitialRoomState(roomId: string) {
+    return {
+      roomId,
+      players: [],
+      spectators: [],
+      deck: [],
+      pot: 0,
+      bottomBet: 10,
+      currentTurnIndex: 0,
+      nextGameStartIndex: 0,
+      gameState: "waiting",
+      currentCards: { card1: null, card2: null, card3: null, card3Flipped: false },
+      lastAction: ""
+    };
   }
 
-  function saveState() {
-    const data = JSON.stringify({ pot, bottomBet, currentTurnIndex, nextGameStartIndex, gameState, currentCards, deck });
-    db.prepare("INSERT OR REPLACE INTO game_state (id, data) VALUES (1, ?)").run(data);
+  // Load state from DB for each room
+  Object.keys(rooms).forEach(roomId => {
+    const savedState = db.prepare("SELECT data FROM game_state WHERE room_id = ?").get(roomId) as any;
+    if (savedState) {
+      const data = JSON.parse(savedState.data);
+      rooms[roomId].pot = data.pot;
+      rooms[roomId].bottomBet = data.bottomBet;
+      rooms[roomId].currentTurnIndex = data.currentTurnIndex;
+      rooms[roomId].nextGameStartIndex = data.nextGameStartIndex || 0;
+      rooms[roomId].gameState = data.gameState;
+      rooms[roomId].currentCards = data.currentCards;
+      rooms[roomId].deck = data.deck || [];
+    }
+  });
+
+  function saveRoomState(roomId: string) {
+    const room = rooms[roomId];
+    const data = JSON.stringify({ 
+      pot: room.pot, 
+      bottomBet: room.bottomBet, 
+      currentTurnIndex: room.currentTurnIndex, 
+      nextGameStartIndex: room.nextGameStartIndex,
+      gameState: room.gameState, 
+      currentCards: room.currentCards, 
+      deck: room.deck 
+    });
+    db.prepare("INSERT OR REPLACE INTO game_state (room_id, data) VALUES (?, ?)").run(roomId, data);
   }
 
   function getPlayerStats(name: string) {
@@ -88,17 +112,17 @@ async function startServer() {
     db.prepare("UPDATE player_stats SET profit = profit + ? WHERE name = ?").run(amount, name);
   }
 
-  function resetStats() {
-    db.prepare("DELETE FROM player_stats").run();
-    db.prepare("DELETE FROM game_state").run();
-    db.prepare("DELETE FROM game_history").run();
-    pot = 0;
-    gameState = "waiting";
-    currentTurnIndex = 0;
-    nextGameStartIndex = 0;
-    currentCards = { card1: null, card2: null, card3: null, card3Flipped: false };
-    deck = [];
-    saveState();
+  function resetRoomStats(roomId: string) {
+    const room = rooms[roomId];
+    db.prepare("DELETE FROM game_state WHERE room_id = ?").run(roomId);
+    db.prepare("DELETE FROM game_history WHERE room_id = ?").run(roomId);
+    room.pot = 0;
+    room.gameState = "waiting";
+    room.currentTurnIndex = 0;
+    room.nextGameStartIndex = 0;
+    room.currentCards = { card1: null, card2: null, card3: null, card3Flipped: false };
+    room.deck = [];
+    saveRoomState(roomId);
   }
 
   function createDeck() {
@@ -121,123 +145,143 @@ async function startServer() {
     return array;
   }
 
-  function drawCard() {
-    if (deck.length === 0) {
+  function drawCard(roomId: string) {
+    const room = rooms[roomId];
+    if (room.deck.length === 0) {
       // Reshuffle: create a new 52-card deck and remove cards currently in play
       let newDeck = createDeck();
-      const cardsInPlay = [currentCards.card1, currentCards.card2, currentCards.card3].filter(c => c !== null);
+      const cardsInPlay = [room.currentCards.card1, room.currentCards.card2, room.currentCards.card3].filter(c => c !== null);
       
       // Filter out cards that are currently on the table to prevent duplicate cards in the same turn
       newDeck = newDeck.filter(card => 
         !cardsInPlay.some(inPlay => inPlay.suit === card.suit && inPlay.value === card.value)
       );
       
-      deck = shuffle(newDeck);
+      room.deck = shuffle(newDeck);
     }
-    return deck.pop();
+    return room.deck.pop();
   }
 
-  function broadcastState() {
-    const history = db.prepare("SELECT * FROM game_history ORDER BY id DESC LIMIT 50").all();
+  function broadcastRoomState(roomId: string) {
+    const room = rooms[roomId];
+    const history = db.prepare("SELECT * FROM game_history WHERE room_id = ? ORDER BY id DESC LIMIT 50").all(roomId);
     const state = {
-      players: players.map(p => ({ ...p, profit: getPlayerStats(p.name) })),
-      spectators: spectators.map(s => ({ name: s.name })),
-      pot,
-      bottomBet,
-      currentTurnIndex,
-      gameState,
-      currentCards,
-      lastAction,
-      deckCount: deck.length,
+      roomId,
+      players: room.players.map((p: any) => ({ ...p, profit: getPlayerStats(p.name) })),
+      spectators: room.spectators.map((s: any) => ({ name: s.name })),
+      pot: room.pot,
+      bottomBet: room.bottomBet,
+      currentTurnIndex: room.currentTurnIndex,
+      gameState: room.gameState,
+      currentCards: room.currentCards,
+      lastAction: room.lastAction,
+      deckCount: room.deck.length,
       history
     };
-    io.emit("stateUpdate", state);
-    saveState();
+    io.to(roomId).emit("stateUpdate", state);
+    saveRoomState(roomId);
   }
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);
+    let currentRoomId: string | null = null;
 
-    socket.on("join", ({ name, role }) => {
+    socket.on("join", ({ name, role, roomId }) => {
+      if (!rooms[roomId]) {
+        socket.emit("error", "無效的房間");
+        return;
+      }
+      
+      currentRoomId = roomId;
+      socket.join(roomId);
+      const room = rooms[roomId];
+
       if (role === "spectator") {
-        spectators.push({ id: socket.id, name });
-        broadcastState();
+        room.spectators.push({ id: socket.id, name });
+        broadcastRoomState(roomId);
         return;
       }
 
-      if (players.length >= 10) {
+      if (room.players.length >= 10) {
         socket.emit("error", "房間已滿，請以旁觀者身份加入");
         return;
       }
-      if (gameState === "playing" && pot > 0) {
+      if (room.gameState === "playing" && room.pot > 0) {
         socket.emit("error", "遊戲進行中，請先旁觀");
         return;
       }
 
-      const isHost = players.length === 0;
-      players.push({ id: socket.id, name, isHost });
-      broadcastState();
+      const isHost = room.players.length === 0;
+      room.players.push({ id: socket.id, name, isHost });
+      broadcastRoomState(roomId);
     });
 
     socket.on("joinAsPlayer", () => {
-      const spectatorIndex = spectators.findIndex(s => s.id === socket.id);
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const spectatorIndex = room.spectators.findIndex((s: any) => s.id === socket.id);
       if (spectatorIndex === -1) return;
 
-      if (players.length >= 10) {
+      if (room.players.length >= 10) {
         socket.emit("error", "房間已滿");
         return;
       }
-      if (gameState === "playing" && pot > 0) {
+      if (room.gameState === "playing" && room.pot > 0) {
         socket.emit("error", "遊戲進行中，請等待下一局");
         return;
       }
 
-      const spectator = spectators.splice(spectatorIndex, 1)[0];
-      const isHost = players.length === 0;
-      players.push({ id: socket.id, name: spectator.name, isHost });
-      broadcastState();
+      const spectator = room.spectators.splice(spectatorIndex, 1)[0];
+      const isHost = room.players.length === 0;
+      room.players.push({ id: socket.id, name: spectator.name, isHost });
+      broadcastRoomState(currentRoomId);
     });
 
     socket.on("startGame", (bet) => {
-      const player = players.find(p => p.id === socket.id);
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const player = room.players.find((p: any) => p.id === socket.id);
       if (player?.isHost) {
-        bottomBet = parseInt(bet) || 10;
-        pot = players.length * bottomBet;
-        players.forEach(p => updatePlayerProfit(p.name, -bottomBet));
-        gameState = "playing";
+        room.bottomBet = parseInt(bet) || 10;
+        room.pot = room.players.length * room.bottomBet;
+        room.players.forEach((p: any) => updatePlayerProfit(p.name, -room.bottomBet));
+        room.gameState = "playing";
         // Start with the calculated next player, ensuring it's within bounds
-        currentTurnIndex = nextGameStartIndex % players.length;
-        deck = shuffle(createDeck());
-        startNewTurn();
+        room.currentTurnIndex = room.nextGameStartIndex % room.players.length;
+        room.deck = shuffle(createDeck());
+        startNewTurn(currentRoomId);
       }
     });
 
-    function startNewTurn() {
-      currentCards = {
-        card1: drawCard(),
-        card2: drawCard(),
-        card3: drawCard(),
+    function startNewTurn(roomId: string) {
+      const room = rooms[roomId];
+      room.currentCards = {
+        card1: drawCard(roomId),
+        card2: drawCard(roomId),
+        card3: drawCard(roomId),
         card3Flipped: false,
         betAmount: 0,
         choice: null // For same card case: 'higher' | 'lower'
       };
-      broadcastState();
+      broadcastRoomState(roomId);
     }
 
     socket.on("placeBet", ({ amount, choice }) => {
-      const currentPlayer = players[currentTurnIndex];
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const currentPlayer = room.players[room.currentTurnIndex];
       if (socket.id !== currentPlayer?.id) return;
 
       const bet = parseInt(amount);
-      if (isNaN(bet) || bet < bottomBet || bet > pot) return;
+      if (isNaN(bet) || bet < room.bottomBet || bet > room.pot) return;
 
-      currentCards.betAmount = bet;
-      currentCards.choice = choice;
-      currentCards.card3Flipped = true;
+      room.currentCards.betAmount = bet;
+      room.currentCards.choice = choice;
+      room.currentCards.card3Flipped = true;
 
-      const c1 = currentCards.card1.value;
-      const c2 = currentCards.card2.value;
-      const c3 = currentCards.card3.value;
+      const c1 = room.currentCards.card1.value;
+      const c2 = room.currentCards.card2.value;
+      const c3 = room.currentCards.card3.value;
 
       let result = 0; // profit for player
       let actionMsg = "";
@@ -278,121 +322,136 @@ async function startServer() {
       }
 
       updatePlayerProfit(currentPlayer.name, result);
-      pot -= result; // If result is negative, pot increases
-      lastAction = actionMsg;
+      room.pot -= result; // If result is negative, pot increases
+      room.lastAction = actionMsg;
 
       // Record History
       db.prepare(`
-        INSERT INTO game_history (playerName, card1, card2, card3, betAmount, result, actionMsg)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO game_history (room_id, playerName, card1, card2, card3, betAmount, result, actionMsg)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
+        currentRoomId,
         currentPlayer.name,
-        `${currentCards.card1.suit}${currentCards.card1.value}`,
-        `${currentCards.card2.suit}${currentCards.card2.value}`,
-        `${currentCards.card3.suit}${currentCards.card3.value}`,
+        `${room.currentCards.card1.suit}${room.currentCards.card1.value}`,
+        `${room.currentCards.card2.suit}${room.currentCards.card2.value}`,
+        `${room.currentCards.card3.suit}${room.currentCards.card3.value}`,
         bet,
         result,
         actionMsg
       );
 
-      if (pot <= 0) {
-        pot = 0;
-        gameState = "waiting";
+      if (room.pot <= 0) {
+        room.pot = 0;
+        room.gameState = "waiting";
         // Set the next game's starting player to the current player's next neighbor
-        nextGameStartIndex = (currentTurnIndex + 1) % players.length;
-        lastAction += " 彩金已清空，遊戲結束！";
+        room.nextGameStartIndex = (room.currentTurnIndex + 1) % room.players.length;
+        room.lastAction += " 彩金已清空，遊戲結束！";
       }
 
-      broadcastState();
+      broadcastRoomState(currentRoomId);
     });
 
     socket.on("nextTurn", () => {
-      const currentPlayer = players[currentTurnIndex];
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const currentPlayer = room.players[room.currentTurnIndex];
       if (socket.id !== currentPlayer?.id) return;
-      if (!currentCards.card3Flipped) return;
+      if (!room.currentCards.card3Flipped) return;
 
-      currentTurnIndex = (currentTurnIndex + 1) % players.length;
-      startNewTurn();
+      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+      startNewTurn(currentRoomId);
     });
 
     socket.on("skipTurn", () => {
-      const currentPlayer = players[currentTurnIndex];
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const currentPlayer = room.players[room.currentTurnIndex];
       if (socket.id !== currentPlayer?.id) return;
-      if (currentCards.card3Flipped) return; // Cannot skip after flipping
+      if (room.currentCards.card3Flipped) return; // Cannot skip after flipping
 
-      lastAction = `${currentPlayer.name} 選擇了跳過。`;
+      room.lastAction = `${currentPlayer.name} 選擇了跳過。`;
       
       // Record History for skip
       db.prepare(`
-        INSERT INTO game_history (playerName, card1, card2, card3, betAmount, result, actionMsg)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO game_history (room_id, playerName, card1, card2, card3, betAmount, result, actionMsg)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
+        currentRoomId,
         currentPlayer.name,
-        `${currentCards.card1.suit}${currentCards.card1.value}`,
-        `${currentCards.card2.suit}${currentCards.card2.value}`,
+        `${room.currentCards.card1.suit}${room.currentCards.card1.value}`,
+        `${room.currentCards.card2.suit}${room.currentCards.card2.value}`,
         null,
         0,
         0,
         `${currentPlayer.name} 跳過了回合`
       );
 
-      currentTurnIndex = (currentTurnIndex + 1) % players.length;
-      startNewTurn();
+      room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+      startNewTurn(currentRoomId);
     });
 
     socket.on("settleProfits", () => {
-      const player = players.find(p => p.id === socket.id);
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const player = room.players.find((p: any) => p.id === socket.id);
       if (player?.isHost) {
         db.prepare("UPDATE player_stats SET profit = 0").run();
-        lastAction = "房主已將所有玩家的籌碼結算歸零。";
-        broadcastState();
+        room.lastAction = "房主已將所有玩家的籌碼結算歸零。";
+        broadcastRoomState(currentRoomId);
       }
     });
 
     socket.on("resetGame", () => {
-      const player = players.find(p => p.id === socket.id);
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const player = room.players.find((p: any) => p.id === socket.id);
       if (player?.isHost) {
-        resetStats();
-        broadcastState();
+        resetRoomStats(currentRoomId);
+        broadcastRoomState(currentRoomId);
       }
     });
 
     socket.on("splitPot", () => {
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
       // For simplicity, if host requests split, we split it
-      const player = players.find(p => p.id === socket.id);
-      if (player?.isHost && pot > 0) {
-        const share = Math.floor(pot / players.length);
-        players.forEach(p => updatePlayerProfit(p.name, share));
-        pot = 0;
-        gameState = "waiting";
-        lastAction = "房主決定平分彩金，遊戲結束。";
-        broadcastState();
+      const player = room.players.find((p: any) => p.id === socket.id);
+      if (player?.isHost && room.pot > 0) {
+        const share = Math.floor(room.pot / room.players.length);
+        room.players.forEach((p: any) => updatePlayerProfit(p.name, share));
+        room.pot = 0;
+        room.gameState = "waiting";
+        room.lastAction = "房主決定平分彩金，遊戲結束。";
+        broadcastRoomState(currentRoomId);
       }
     });
 
     socket.on("disconnect", () => {
       console.log("User disconnected:", socket.id);
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
       
       // Check if it was a player
-      const playerIndex = players.findIndex(p => p.id === socket.id);
+      const playerIndex = room.players.findIndex((p: any) => p.id === socket.id);
       if (playerIndex !== -1) {
-        const wasHost = players[playerIndex].isHost;
-        players.splice(playerIndex, 1);
-        if (wasHost && players.length > 0) {
-          players[0].isHost = true;
+        const wasHost = room.players[playerIndex].isHost;
+        room.players.splice(playerIndex, 1);
+        if (wasHost && room.players.length > 0) {
+          room.players[0].isHost = true;
         }
-        currentTurnIndex = players.length > 0 ? currentTurnIndex % players.length : 0;
-        broadcastState();
+        room.currentTurnIndex = room.players.length > 0 ? room.currentTurnIndex % room.players.length : 0;
+        broadcastRoomState(currentRoomId);
         return;
       }
 
       // Check if it was a spectator
-      const spectatorIndex = spectators.findIndex(s => s.id === socket.id);
+      const spectatorIndex = room.spectators.findIndex((s: any) => s.id === socket.id);
       if (spectatorIndex !== -1) {
-        spectators.splice(spectatorIndex, 1);
-        broadcastState();
+        room.spectators.splice(spectatorIndex, 1);
+        broadcastRoomState(currentRoomId);
       }
     });
+  });
   });
 
   // Serve images from the root image folder
