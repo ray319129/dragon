@@ -452,7 +452,6 @@ async function startServer() {
       }
     });
   });
-  });
 
   // Serve images from the root image folder
   app.use("/image", express.static(path.join(process.cwd(), "image")));
