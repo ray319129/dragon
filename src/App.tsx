@@ -38,6 +38,22 @@ interface GameState {
   };
   lastAction: string;
   deckCount: number;
+  probabilities: {
+    type: "same" | "range";
+    win?: number;
+    lose?: number;
+    higher?: number;
+    lower?: number;
+    post: number;
+    counts: {
+      win?: number;
+      lose?: number;
+      higher?: number;
+      lower?: number;
+      post: number;
+      total: number;
+    };
+  } | null;
   history: {
     id: number;
     timestamp: string;
@@ -129,6 +145,157 @@ const CardView = ({ card, flipped = true, className = "" }: { card: Card | null;
   );
 };
 
+const ProbabilityModal = ({ isOpen, onClose, probabilities }: { isOpen: boolean; onClose: () => void; probabilities: any }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="bg-stone-800 w-full max-w-2xl rounded-3xl border border-white/10 overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+      >
+        <div className="p-6 border-b border-white/5 flex items-center justify-between bg-stone-700/30">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-400">
+              <Info size={24} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold">機率計算實驗室</h2>
+              <p className="text-xs text-stone-500 uppercase tracking-widest">Probability Lab & Math Breakdown</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-stone-500 hover:text-white transition-colors">
+            <RotateCcw size={24} className="rotate-45" />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto space-y-8">
+          <section>
+            <h3 className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
+              <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
+              核心計算原理
+            </h3>
+            <div className="bg-stone-900/50 p-4 rounded-2xl border border-white/5 space-y-3">
+              <p className="text-sm text-stone-300 leading-relaxed">
+                本遊戲的機率計算採用 <span className="text-white font-bold">古典機率 (Classical Probability)</span> 模型。
+                在一個公平的牌組中，每一張牌被抽中的機率都是相等的。
+              </p>
+              <div className="bg-stone-800 p-4 rounded-xl text-center font-mono text-lg border border-white/5">
+                P(事件) = <span className="text-emerald-400">符合條件的剩餘牌數</span> / <span className="text-stone-400">牌組總剩餘張數</span>
+              </div>
+              <p className="text-xs text-stone-500 italic">
+                * 註：本系統會即時追蹤牌組中「已被抽走」的牌，因此機率會隨著遊戲進行而產生動態變化，這與現實中實體撲克牌的邏輯完全一致。
+              </p>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
+              <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
+              射龍門規則與數學
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div className="bg-stone-900/50 p-4 rounded-2xl border border-white/5">
+                <h4 className="font-bold text-white mb-2">1. 射門成功 (Win)</h4>
+                <p className="text-stone-400">
+                  當第三張牌的點數介於前兩張牌之間（不含邊界）。
+                  <br/>
+                  <span className="text-[10px] font-mono text-stone-600">Min &lt; Card3 &lt; Max</span>
+                </p>
+              </div>
+              <div className="bg-stone-900/50 p-4 rounded-2xl border border-red-500/10">
+                <h4 className="font-bold text-red-400 mb-2">2. 撞柱 (Post)</h4>
+                <p className="text-stone-400">
+                  當第三張牌點數等於前兩張牌中的任一張。此時需賠付雙倍賭注。
+                  <br/>
+                  <span className="text-[10px] font-mono text-stone-600">Card3 == Card1 OR Card3 == Card2</span>
+                </p>
+              </div>
+              <div className="bg-stone-900/50 p-4 rounded-2xl border border-white/5">
+                <h4 className="font-bold text-white mb-2">3. 射偏 (Lose)</h4>
+                <p className="text-stone-400">
+                  當第三張牌點數在前兩張牌範圍之外。
+                  <br/>
+                  <span className="text-[10px] font-mono text-stone-600">Card3 &lt; Min OR Card3 &gt; Max</span>
+                </p>
+              </div>
+              <div className="bg-stone-900/50 p-4 rounded-2xl border border-amber-500/10">
+                <h4 className="font-bold text-amber-400 mb-2">4. 相同牌 (Same)</h4>
+                <p className="text-stone-400">
+                  若前兩張牌點數相同，玩家需選擇「猜大」或「猜小」。
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {probabilities && (
+            <section>
+              <h3 className="text-emerald-400 font-bold mb-3 flex items-center gap-2">
+                <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
+                當前局勢深度分析
+              </h3>
+              <div className="bg-emerald-500/5 p-5 rounded-2xl border border-emerald-500/20">
+                <div className="flex justify-between items-end mb-4">
+                  <div>
+                    <div className="text-xs text-stone-500 uppercase font-bold">當前牌組狀態</div>
+                    <div className="text-2xl font-bold text-white">剩餘 {probabilities.counts.total} 張牌</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs text-stone-500 uppercase font-bold">洗牌點</div>
+                    <div className="text-sm font-mono text-stone-400">0 張時自動洗牌</div>
+                  </div>
+                </div>
+                
+                <div className="space-y-4">
+                  {probabilities.type === "range" ? (
+                    <>
+                      <ProbBar label="射門成功" percent={probabilities.win} count={probabilities.counts.win} color="bg-emerald-500" />
+                      <ProbBar label="射偏" percent={probabilities.lose} count={probabilities.counts.lose} color="bg-stone-600" />
+                      <ProbBar label="撞柱 (危險)" percent={probabilities.post} count={probabilities.counts.post} color="bg-red-500" />
+                    </>
+                  ) : (
+                    <>
+                      <ProbBar label="猜大" percent={probabilities.higher} count={probabilities.counts.higher} color="bg-emerald-500" />
+                      <ProbBar label="猜小" percent={probabilities.lower} count={probabilities.counts.lower} color="bg-blue-500" />
+                      <ProbBar label="撞柱 (危險)" percent={probabilities.post} count={probabilities.counts.post} color="bg-red-500" />
+                    </>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+
+        <div className="p-6 bg-stone-900/50 border-t border-white/5">
+          <button 
+            onClick={onClose}
+            className="w-full bg-stone-700 hover:bg-stone-600 py-3 rounded-xl font-bold transition-all"
+          >
+            我明白了
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+const ProbBar = ({ label, percent, count, color }: { label: string, percent: number, count: number, color: string }) => (
+  <div className="space-y-1.5">
+    <div className="flex justify-between text-xs">
+      <span className="text-stone-300 font-medium">{label}</span>
+      <span className="text-stone-400 font-mono">{percent.toFixed(1)}% ({count} 張)</span>
+    </div>
+    <div className="h-2 bg-stone-800 rounded-full overflow-hidden">
+      <motion.div 
+        initial={{ width: 0 }}
+        animate={{ width: `${percent}%` }}
+        className={cn("h-full rounded-full", color)}
+      />
+    </div>
+  </div>
+);
+
 export default function App() {
   const [name, setName] = useState("");
   const [role, setRole] = useState<"player" | "spectator">("player");
@@ -137,6 +304,7 @@ export default function App() {
   const [betInput, setBetInput] = useState("");
   const [bottomBetInput, setBottomBetInput] = useState("10");
   const [error, setError] = useState("");
+  const [showProbModal, setShowProbModal] = useState(false);
 
   useEffect(() => {
     socket.on("stateUpdate", (newState: GameState) => {
@@ -429,7 +597,13 @@ export default function App() {
               {state.lastAction || "等待遊戲開始..."}
             </p>
           </div>
-          <div className="text-right">
+          <div className="text-right flex flex-col items-end">
+            <button 
+              onClick={() => setShowProbModal(true)}
+              className="mb-2 bg-stone-800 hover:bg-stone-700 p-2 rounded-lg text-stone-400 hover:text-emerald-400 transition-all flex items-center gap-2 text-[10px] font-bold uppercase tracking-wider border border-white/5"
+            >
+              <Info size={14} /> 機率實驗室
+            </button>
             <div className="text-stone-500 text-xs font-bold uppercase tracking-widest mb-1">底注</div>
             <div className="text-xl font-mono">${state.bottomBet}</div>
             {state.gameState === "playing" && (
@@ -585,51 +759,87 @@ export default function App() {
                         </div>
 
                         {/* Probability Helper */}
-                        {state.currentCards.card1 && state.currentCards.card2 && (
-                          <div className="bg-stone-900/50 rounded-xl p-3 border border-white/5">
-                            <div className="text-[10px] font-bold text-stone-500 uppercase mb-2 flex items-center gap-1">
-                              <Info size={12} /> 勝率分析 (機率僅供參考)
+                        {state.probabilities && (
+                          <div className="bg-stone-900/50 rounded-xl p-4 border border-white/10">
+                            <div className="flex items-center justify-between mb-3">
+                              <div className="text-[10px] font-bold text-stone-500 uppercase flex items-center gap-1">
+                                <Info size={12} /> 真實機率分析 (基於剩餘牌組)
+                              </div>
+                              <div className="text-[10px] text-stone-600 font-mono">
+                                剩餘 {state.probabilities.counts.total} 張牌
+                              </div>
                             </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              {sameCards ? (
+                            
+                            <div className="grid grid-cols-3 gap-3">
+                              {state.probabilities.type === "same" ? (
                                 <>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">猜大</div>
-                                    <div className="text-sm font-bold text-emerald-400">
-                                      {Math.round(((13 - state.currentCards.card1.value) / 13) * 100)}%
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-white/5">
+                                    <div className="text-[10px] text-stone-400 mb-1">猜大</div>
+                                    <div className="text-lg font-bold text-emerald-400">
+                                      {state.probabilities.higher?.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.higher} / {state.probabilities.counts.total}
                                     </div>
                                   </div>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">猜小</div>
-                                    <div className="text-sm font-bold text-blue-400">
-                                      {Math.round(((state.currentCards.card1.value - 1) / 13) * 100)}%
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-white/5">
+                                    <div className="text-[10px] text-stone-400 mb-1">猜小</div>
+                                    <div className="text-lg font-bold text-blue-400">
+                                      {state.probabilities.lower?.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.lower} / {state.probabilities.counts.total}
                                     </div>
                                   </div>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">撞柱</div>
-                                    <div className="text-sm font-bold text-red-400">7.7%</div>
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-red-500/20">
+                                    <div className="text-[10px] text-red-400 mb-1">撞柱</div>
+                                    <div className="text-lg font-bold text-red-500">
+                                      {state.probabilities.post.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.post} / {state.probabilities.counts.total}
+                                    </div>
                                   </div>
                                 </>
                               ) : (
                                 <>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">射門成功</div>
-                                    <div className="text-sm font-bold text-emerald-400">
-                                      {Math.round((Math.max(0, Math.abs(state.currentCards.card1.value - state.currentCards.card2.value) - 1) / 13) * 100)}%
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-white/5">
+                                    <div className="text-[10px] text-stone-400 mb-1">射門成功</div>
+                                    <div className="text-lg font-bold text-emerald-400">
+                                      {state.probabilities.win?.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.win} / {state.probabilities.counts.total}
                                     </div>
                                   </div>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">射偏</div>
-                                    <div className="text-sm font-bold text-stone-400">
-                                      {Math.round(((13 - (Math.abs(state.currentCards.card1.value - state.currentCards.card2.value) + 1)) / 13) * 100)}%
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-white/5">
+                                    <div className="text-[10px] text-stone-400 mb-1">射偏</div>
+                                    <div className="text-lg font-bold text-stone-400">
+                                      {state.probabilities.lose?.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.lose} / {state.probabilities.counts.total}
                                     </div>
                                   </div>
-                                  <div className="text-center">
-                                    <div className="text-[10px] text-stone-400">撞柱風險</div>
-                                    <div className="text-sm font-bold text-red-400">15.4%</div>
+                                  <div className="bg-stone-800/50 p-2 rounded-lg border border-red-500/20">
+                                    <div className="text-[10px] text-red-400 mb-1">撞柱風險</div>
+                                    <div className="text-lg font-bold text-red-500">
+                                      {state.probabilities.post.toFixed(1)}%
+                                    </div>
+                                    <div className="text-[9px] text-stone-500 font-mono">
+                                      {state.probabilities.counts.post} / {state.probabilities.counts.total}
+                                    </div>
                                   </div>
                                 </>
                               )}
+                            </div>
+                            
+                            <div className="mt-3 pt-3 border-t border-white/5 text-[10px] text-stone-500 leading-relaxed">
+                              <p>
+                                💡 <span className="text-stone-400">計算公式：</span> 
+                                (符合條件的剩餘牌數 / 牌組剩餘總數) × 100%。
+                                遊戲使用標準 52 張撲克牌，每次洗牌後隨機抽取，不包含鬼牌。
+                              </p>
                             </div>
                           </div>
                         )}
@@ -736,6 +946,12 @@ export default function App() {
           <Info size={18} /> {error}
         </motion.div>
       )}
+
+      <ProbabilityModal 
+        isOpen={showProbModal} 
+        onClose={() => setShowProbModal(false)} 
+        probabilities={state.probabilities}
+      />
 
       <style>{`
         .preserve-3d { transform-style: preserve-3d; }

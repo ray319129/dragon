@@ -5,6 +5,7 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { fileURLToPath } from "url";
+import crypto from "crypto";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +53,7 @@ async function startServer() {
   let pot = 0;
   let bottomBet = 10;
   let currentTurnIndex = 0;
+  let nextGameStartIndex = 0;
   let gameState: "waiting" | "playing" = "waiting";
   let currentCards: any = { card1: null, card2: null, card3: null, card3Flipped: false };
   let lastAction: string = "";
@@ -63,12 +65,13 @@ async function startServer() {
     pot = data.pot;
     bottomBet = data.bottomBet;
     currentTurnIndex = data.currentTurnIndex;
+    nextGameStartIndex = data.nextGameStartIndex || 0;
     gameState = data.gameState;
     currentCards = data.currentCards;
   }
 
   function saveState() {
-    const data = JSON.stringify({ pot, bottomBet, currentTurnIndex, gameState, currentCards, deck });
+    const data = JSON.stringify({ pot, bottomBet, currentTurnIndex, nextGameStartIndex, gameState, currentCards, deck });
     db.prepare("INSERT OR REPLACE INTO game_state (id, data) VALUES (1, ?)").run(data);
   }
 
@@ -92,6 +95,7 @@ async function startServer() {
     pot = 0;
     gameState = "waiting";
     currentTurnIndex = 0;
+    nextGameStartIndex = 0;
     currentCards = { card1: null, card2: null, card3: null, card3Flipped: false };
     deck = [];
     saveState();
@@ -111,7 +115,7 @@ async function startServer() {
 
   function shuffle(array: any[]) {
     for (let i = array.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
+      const j = crypto.randomInt(0, i + 1);
       [array[i], array[j]] = [array[j], array[i]];
     }
     return array;
@@ -119,7 +123,16 @@ async function startServer() {
 
   function drawCard() {
     if (deck.length === 0) {
-      deck = shuffle(createDeck());
+      // Reshuffle: create a new 52-card deck and remove cards currently in play
+      let newDeck = createDeck();
+      const cardsInPlay = [currentCards.card1, currentCards.card2, currentCards.card3].filter(c => c !== null);
+      
+      // Filter out cards that are currently on the table to prevent duplicate cards in the same turn
+      newDeck = newDeck.filter(card => 
+        !cardsInPlay.some(inPlay => inPlay.suit === card.suit && inPlay.value === card.value)
+      );
+      
+      deck = shuffle(newDeck);
     }
     return deck.pop();
   }
@@ -192,7 +205,8 @@ async function startServer() {
         pot = players.length * bottomBet;
         players.forEach(p => updatePlayerProfit(p.name, -bottomBet));
         gameState = "playing";
-        currentTurnIndex = 0;
+        // Start with the calculated next player, ensuring it's within bounds
+        currentTurnIndex = nextGameStartIndex % players.length;
         deck = shuffle(createDeck());
         startNewTurn();
       }
@@ -284,6 +298,8 @@ async function startServer() {
       if (pot <= 0) {
         pot = 0;
         gameState = "waiting";
+        // Set the next game's starting player to the current player's next neighbor
+        nextGameStartIndex = (currentTurnIndex + 1) % players.length;
         lastAction += " 彩金已清空，遊戲結束！";
       }
 
@@ -379,8 +395,6 @@ async function startServer() {
     });
   });
 
-  // Serve static files from public folder
-  app.use(express.static(path.join(process.cwd(), "public")));
   // Serve images from the root image folder
   app.use("/image", express.static(path.join(process.cwd(), "image")));
 
