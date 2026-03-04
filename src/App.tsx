@@ -634,6 +634,25 @@ export default function App() {
                           </div>
                         )}
 
+                        {/* Quick Bet Buttons */}
+                        <div className="flex flex-wrap gap-2">
+                          {[10, 20, 50].map((amount) => (
+                            <button
+                              key={amount}
+                              onClick={() => setBetInput(amount.toString())}
+                              className="bg-stone-700 hover:bg-stone-600 px-4 py-2 rounded-lg text-sm font-bold transition-all"
+                            >
+                              ${amount}
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => setBetInput(state.pot.toString())}
+                            className="bg-red-600 hover:bg-red-500 px-4 py-2 rounded-lg text-sm font-bold transition-all text-white shadow-lg shadow-red-600/20"
+                          >
+                            ALL IN
+                          </button>
+                        </div>
+
                         <div className="flex flex-col sm:flex-row gap-3">
                           <input
                             type="number"
