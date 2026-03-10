@@ -75,8 +75,37 @@ async function startServer() {
       nextGameStartIndex: 0,
       gameState: "waiting",
       currentCards: { card1: null, card2: null, card3: null, card3Flipped: false },
-      lastAction: ""
+      lastAction: "",
+      turnTimeout: null,
+      turnStartTime: null
     };
+  }
+
+  function resetTurnTimeout(roomId: string) {
+    const room = rooms[roomId];
+    if (room.turnTimeout) {
+      clearTimeout(room.turnTimeout);
+      room.turnTimeout = null;
+    }
+
+    if (room.gameState === "playing") {
+      room.turnStartTime = Date.now();
+      room.turnTimeout = setTimeout(() => {
+        const currentPlayer = room.players[room.currentTurnIndex];
+        if (currentPlayer) {
+          if (room.currentCards.card3Flipped) {
+            // Auto next turn
+            room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+            startNewTurn(roomId);
+          } else {
+            // Auto skip
+            room.lastAction = `${currentPlayer.name} 超時，系統自動跳過。`;
+            room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+            startNewTurn(roomId);
+          }
+        }
+      }, 5000);
+    }
   }
 
   // Load state from DB for each room
@@ -124,6 +153,10 @@ async function startServer() {
 
   function resetRoomStats(roomId: string) {
     const room = rooms[roomId];
+    if (room.turnTimeout) {
+      clearTimeout(room.turnTimeout);
+      room.turnTimeout = null;
+    }
     db.prepare("DELETE FROM game_state WHERE room_id = ?").run(roomId);
     db.prepare("DELETE FROM game_history WHERE room_id = ?").run(roomId);
     room.pot = 0;
@@ -193,6 +226,20 @@ async function startServer() {
     };
     io.to(roomId).emit("stateUpdate", state);
     saveRoomState(roomId);
+  }
+
+  function startNewTurn(roomId: string) {
+    const room = rooms[roomId];
+    room.currentCards = {
+      card1: drawCard(roomId),
+      card2: drawCard(roomId),
+      card3: drawCard(roomId),
+      card3Flipped: false,
+      betAmount: 0,
+      choice: null // For same card case: 'higher' | 'lower'
+    };
+    resetTurnTimeout(roomId);
+    broadcastRoomState(roomId);
   }
 
   io.on("connection", (socket) => {
@@ -265,19 +312,6 @@ async function startServer() {
         startNewTurn(currentRoomId);
       }
     });
-
-    function startNewTurn(roomId: string) {
-      const room = rooms[roomId];
-      room.currentCards = {
-        card1: drawCard(roomId),
-        card2: drawCard(roomId),
-        card3: drawCard(roomId),
-        card3Flipped: false,
-        betAmount: 0,
-        choice: null // For same card case: 'higher' | 'lower'
-      };
-      broadcastRoomState(roomId);
-    }
 
     socket.on("placeBet", ({ amount, choice }) => {
       if (!currentRoomId) return;
@@ -359,6 +393,13 @@ async function startServer() {
         // Set the next game's starting player to the current player's next neighbor
         room.nextGameStartIndex = (room.currentTurnIndex + 1) % room.players.length;
         room.lastAction += " 彩金已清空，遊戲結束！";
+        if (room.turnTimeout) {
+          clearTimeout(room.turnTimeout);
+          room.turnTimeout = null;
+        }
+      } else {
+        // Reset timeout for the "Next Turn" phase
+        resetTurnTimeout(currentRoomId);
       }
 
       broadcastRoomState(currentRoomId);
@@ -427,6 +468,10 @@ async function startServer() {
         room.pot = 0;
         room.gameState = "waiting";
         room.lastAction = "房主決定平分彩金，遊戲結束。";
+        if (room.turnTimeout) {
+          clearTimeout(room.turnTimeout);
+          room.turnTimeout = null;
+        }
         broadcastRoomState(currentRoomId);
       }
     });

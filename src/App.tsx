@@ -59,6 +59,7 @@ interface GameState {
     result: number;
     actionMsg: string;
   }[];
+  turnStartTime: number | null;
 }
 
 const getCardImageUrl = (card: Card | null, flipped: boolean) => {
@@ -150,6 +151,22 @@ export default function App() {
   const [error, setError] = useState("");
   const [personalHistory, setPersonalHistory] = useState<PlayerLog[]>([]);
   const [showPersonalStats, setShowPersonalStats] = useState(false);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (state?.turnStartTime && state.gameState === "playing") {
+      const updateCountdown = () => {
+        const elapsed = Date.now() - state.turnStartTime!;
+        const remaining = Math.max(0, Math.ceil((5000 - elapsed) / 1000));
+        setCountdown(remaining);
+      };
+      updateCountdown();
+      const interval = setInterval(updateCountdown, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setCountdown(null);
+    }
+  }, [state?.turnStartTime, state?.gameState]);
 
   useEffect(() => {
     socket.on("stateUpdate", (newState: GameState) => {
@@ -407,6 +424,11 @@ export default function App() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {idx === state.currentTurnIndex && state.gameState === "playing" && countdown !== null && (
+                      <span className="text-[10px] font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                        {countdown}s
+                      </span>
+                    )}
                     <div className={cn("text-xs font-mono", p.profit >= 0 ? "text-emerald-500" : "text-red-500")}>
                       當局: {p.profit >= 0 ? "+" : ""}{p.profit}
                     </div>
@@ -653,7 +675,14 @@ export default function App() {
                       <div className="space-y-4 lg:space-y-6">
                         <div className="flex justify-between items-end">
                           <div>
-                            <h3 className="text-xl lg:text-2xl font-bold text-emerald-400">輪到你了！</h3>
+                            <h3 className="text-xl lg:text-2xl font-bold text-emerald-400 flex items-center gap-3">
+                              輪到你了！
+                              {countdown !== null && (
+                                <span className="text-sm bg-red-500/20 text-red-400 px-2 py-1 rounded-lg border border-red-500/30 animate-pulse">
+                                  {countdown}s
+                                </span>
+                              )}
+                            </h3>
                             <p className="text-xs lg:text-sm text-stone-400">請輸入下注金額</p>
                           </div>
                           <div className="text-right">
@@ -725,7 +754,14 @@ export default function App() {
                     ) : (
                       <div className="flex items-center justify-between">
                         <div>
-                          <h3 className="text-xl font-bold">回合結束</h3>
+                          <h3 className="text-xl font-bold flex items-center gap-3">
+                            回合結束
+                            {countdown !== null && (
+                              <span className="text-sm bg-amber-500/20 text-amber-400 px-2 py-1 rounded-lg border border-amber-500/30">
+                                {countdown}s
+                              </span>
+                            )}
+                          </h3>
                           <p className="text-stone-400">點擊按鈕交棒給下一位</p>
                         </div>
                         <button
