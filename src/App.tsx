@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import socket from "./socket";
 import { motion, AnimatePresence } from "motion/react";
-import { Users, Trophy, Coins, Play, RotateCcw, UserCircle, ArrowRight, Split, Info } from "lucide-react";
+import { Users, Trophy, Coins, Play, RotateCcw, UserCircle, ArrowRight, Split, Info, X, LogOut } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
@@ -14,6 +14,16 @@ interface Player {
   name: string;
   isHost: boolean;
   profit: number;
+  lifetimeProfit: number;
+}
+
+interface PlayerLog {
+  id: number;
+  playerName: string;
+  amount: number;
+  type: string;
+  timestamp: string;
+  description: string;
 }
 
 interface Card {
@@ -138,10 +148,16 @@ export default function App() {
   const [betInput, setBetInput] = useState("");
   const [bottomBetInput, setBottomBetInput] = useState("10");
   const [error, setError] = useState("");
+  const [personalHistory, setPersonalHistory] = useState<PlayerLog[]>([]);
+  const [showPersonalStats, setShowPersonalStats] = useState(false);
 
   useEffect(() => {
     socket.on("stateUpdate", (newState: GameState) => {
       setState(newState);
+    });
+
+    socket.on("personalHistory", (logs: PlayerLog[]) => {
+      setPersonalHistory(logs);
     });
 
     socket.on("error", (msg: string) => {
@@ -151,16 +167,28 @@ export default function App() {
 
     return () => {
       socket.off("stateUpdate");
+      socket.off("personalHistory");
       socket.off("error");
     };
+  }, []);
+
+  useEffect(() => {
+    const savedName = localStorage.getItem("dragonGate_name");
+    if (savedName) setName(savedName);
   }, []);
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
+      localStorage.setItem("dragonGate_name", name.trim());
       socket.emit("join", { name: name.trim(), role, roomId });
       setJoined(true);
     }
+  };
+
+  const handleViewPersonalStats = (playerName: string) => {
+    socket.emit("getPersonalHistory", playerName);
+    setShowPersonalStats(true);
   };
 
   const handleJoinAsPlayer = () => {
@@ -187,9 +215,7 @@ export default function App() {
   };
 
   const handleSkip = () => {
-    if (window.confirm("確定要跳過這一回合嗎？")) {
-      socket.emit("skipTurn");
-    }
+    socket.emit("skipTurn");
   };
 
   const handleReset = () => {
@@ -355,16 +381,38 @@ export default function App() {
                 )}>
                   {idx + 1}
                 </div>
-                <div>
+                <div 
+                  className="flex flex-col cursor-pointer"
+                  onClick={() => handleViewPersonalStats(p.name)}
+                >
                   <div className="flex items-center gap-1">
                     <span className={cn("text-sm font-medium", idx === state.currentTurnIndex ? "text-emerald-400" : "text-stone-200")}>
                       {p.name}
                     </span>
                     {p.isHost && <UserCircle size={12} className="text-amber-400" />}
                     {p.id === socket.id && <span className="text-[10px] bg-stone-700 px-1 rounded text-stone-400">我</span>}
+                    {isHost && p.id !== socket.id && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`確定要踢出玩家 ${p.name} 嗎？`)) {
+                            socket.emit("kickPlayer", p.id);
+                          }
+                        }}
+                        className="text-red-500 hover:text-red-400 ml-1 p-0.5 rounded hover:bg-red-500/10 transition-colors"
+                        title="踢出玩家"
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
-                  <div className={cn("text-xs font-mono", p.profit >= 0 ? "text-emerald-500" : "text-red-500")}>
-                    {p.profit >= 0 ? "+" : ""}{p.profit}
+                  <div className="flex items-center gap-2">
+                    <div className={cn("text-xs font-mono", p.profit >= 0 ? "text-emerald-500" : "text-red-500")}>
+                      當局: {p.profit >= 0 ? "+" : ""}{p.profit}
+                    </div>
+                    <div className="text-[10px] font-mono text-stone-500">
+                      生涯: {p.lifetimeProfit >= 0 ? "+" : ""}{p.lifetimeProfit}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -434,6 +482,19 @@ export default function App() {
             )}
           </div>
         )}
+
+        <div className="p-4 border-t border-white/5">
+          <button
+            onClick={() => {
+              if (window.confirm("確定要離開房間嗎？")) {
+                window.location.reload();
+              }
+            }}
+            className="w-full bg-stone-700/50 hover:bg-stone-700 text-stone-400 py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
+          >
+            <LogOut size={14} /> 離開房間
+          </button>
+        </div>
       </div>
 
       {/* Main Game Area */}
@@ -703,6 +764,65 @@ export default function App() {
           <Info size={18} /> {error}
         </motion.div>
       )}
+
+      {/* Personal Stats Modal */}
+      <AnimatePresence>
+        {showPersonalStats && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowPersonalStats(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-stone-800 w-full max-w-lg rounded-3xl shadow-2xl border border-white/10 overflow-hidden flex flex-col max-h-[80vh]"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between bg-stone-700/30">
+                <div>
+                  <h3 className="text-xl font-bold text-white">個人盈虧紀錄</h3>
+                  <p className="text-xs text-stone-400 mt-1">最近 50 筆資金變動</p>
+                </div>
+                <button 
+                  onClick={() => setShowPersonalStats(false)}
+                  className="p-2 hover:bg-white/5 rounded-full transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4">
+                {personalHistory.length === 0 ? (
+                  <div className="text-center py-12 text-stone-500">尚無紀錄</div>
+                ) : (
+                  <div className="space-y-3">
+                    {personalHistory.map((log) => (
+                      <div key={log.id} className="bg-stone-700/30 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
+                        <div>
+                          <div className="text-sm font-medium text-stone-200">{log.description || (log.type === 'settle' ? '系統結算' : '遊戲對局')}</div>
+                          <div className="text-[10px] text-stone-500 mt-1">
+                            {new Date(log.timestamp).toLocaleString()}
+                          </div>
+                        </div>
+                        <div className={cn(
+                          "text-lg font-mono font-bold",
+                          log.amount > 0 ? "text-emerald-400" : log.amount < 0 ? "text-red-400" : "text-stone-400"
+                        )}>
+                          {log.amount > 0 ? "+" : ""}{log.amount}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <style>{`
         .preserve-3d { transform-style: preserve-3d; }

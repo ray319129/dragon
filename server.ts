@@ -20,7 +20,16 @@ db.exec(`
   );
   CREATE TABLE IF NOT EXISTS player_stats (
     name TEXT PRIMARY KEY,
-    profit INTEGER DEFAULT 0
+    profit INTEGER DEFAULT 0,
+    lifetime_profit INTEGER DEFAULT 0
+  );
+  CREATE TABLE IF NOT EXISTS player_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playerName TEXT,
+    amount INTEGER,
+    type TEXT, -- 'game', 'settle', 'reset'
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    description TEXT
   );
   CREATE TABLE IF NOT EXISTS game_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,16 +109,17 @@ async function startServer() {
   }
 
   function getPlayerStats(name: string) {
-    let stats = db.prepare("SELECT profit FROM player_stats WHERE name = ?").get(name) as any;
+    let stats = db.prepare("SELECT profit, lifetime_profit FROM player_stats WHERE name = ?").get(name) as any;
     if (!stats) {
-      db.prepare("INSERT INTO player_stats (name, profit) VALUES (?, 0)").run(name);
-      return 0;
+      db.prepare("INSERT INTO player_stats (name, profit, lifetime_profit) VALUES (?, 0, 0)").run(name);
+      return { profit: 0, lifetime_profit: 0 };
     }
-    return stats.profit;
+    return stats;
   }
 
-  function updatePlayerProfit(name: string, amount: number) {
-    db.prepare("UPDATE player_stats SET profit = profit + ? WHERE name = ?").run(amount, name);
+  function updatePlayerProfit(name: string, amount: number, type: string = "game", description: string = "") {
+    db.prepare("UPDATE player_stats SET profit = profit + ?, lifetime_profit = lifetime_profit + ? WHERE name = ?").run(amount, amount, name);
+    db.prepare("INSERT INTO player_logs (playerName, amount, type, description) VALUES (?, ?, ?, ?)").run(name, amount, type, description);
   }
 
   function resetRoomStats(roomId: string) {
@@ -167,7 +177,10 @@ async function startServer() {
     const history = db.prepare("SELECT * FROM game_history WHERE room_id = ? ORDER BY id DESC LIMIT 50").all(roomId);
     const state = {
       roomId,
-      players: room.players.map((p: any) => ({ ...p, profit: getPlayerStats(p.name) })),
+      players: room.players.map((p: any) => {
+        const stats = getPlayerStats(p.name);
+        return { ...p, profit: stats.profit, lifetimeProfit: stats.lifetime_profit };
+      }),
       spectators: room.spectators.map((s: any) => ({ name: s.name })),
       pot: room.pot,
       bottomBet: room.bottomBet,
@@ -244,7 +257,7 @@ async function startServer() {
       if (player?.isHost) {
         room.bottomBet = parseInt(bet) || 10;
         room.pot = room.players.length * room.bottomBet;
-        room.players.forEach((p: any) => updatePlayerProfit(p.name, -room.bottomBet));
+        room.players.forEach((p: any) => updatePlayerProfit(p.name, -room.bottomBet, "game", "支付底注"));
         room.gameState = "playing";
         // Start with the calculated next player, ensuring it's within bounds
         room.currentTurnIndex = room.nextGameStartIndex % room.players.length;
@@ -321,7 +334,7 @@ async function startServer() {
         }
       }
 
-      updatePlayerProfit(currentPlayer.name, result);
+      updatePlayerProfit(currentPlayer.name, result, "game", actionMsg);
       room.pot -= result; // If result is negative, pot increases
       room.lastAction = actionMsg;
 
@@ -371,21 +384,6 @@ async function startServer() {
 
       room.lastAction = `${currentPlayer.name} 選擇了跳過。`;
       
-      // Record History for skip
-      db.prepare(`
-        INSERT INTO game_history (room_id, playerName, card1, card2, card3, betAmount, result, actionMsg)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        currentRoomId,
-        currentPlayer.name,
-        `${room.currentCards.card1.suit}${room.currentCards.card1.value}`,
-        `${room.currentCards.card2.suit}${room.currentCards.card2.value}`,
-        null,
-        0,
-        0,
-        `${currentPlayer.name} 跳過了回合`
-      );
-
       room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
       startNewTurn(currentRoomId);
     });
@@ -395,10 +393,17 @@ async function startServer() {
       const room = rooms[currentRoomId];
       const player = room.players.find((p: any) => p.id === socket.id);
       if (player?.isHost) {
+        // Only reset session profit, keep lifetime
         db.prepare("UPDATE player_stats SET profit = 0").run();
-        room.lastAction = "房主已將所有玩家的籌碼結算歸零。";
+        db.prepare("INSERT INTO player_logs (playerName, amount, type, description) SELECT name, 0, 'settle', '房主結算' FROM player_stats").run();
+        room.lastAction = "房主已將所有玩家的當局籌碼結算歸零。";
         broadcastRoomState(currentRoomId);
       }
+    });
+
+    socket.on("getPersonalHistory", (playerName) => {
+      const logs = db.prepare("SELECT * FROM player_logs WHERE playerName = ? ORDER BY id DESC LIMIT 50").all(playerName);
+      socket.emit("personalHistory", logs);
     });
 
     socket.on("resetGame", () => {
@@ -418,11 +423,24 @@ async function startServer() {
       const player = room.players.find((p: any) => p.id === socket.id);
       if (player?.isHost && room.pot > 0) {
         const share = Math.floor(room.pot / room.players.length);
-        room.players.forEach((p: any) => updatePlayerProfit(p.name, share));
+        room.players.forEach((p: any) => updatePlayerProfit(p.name, share, "game", "平分彩金"));
         room.pot = 0;
         room.gameState = "waiting";
         room.lastAction = "房主決定平分彩金，遊戲結束。";
         broadcastRoomState(currentRoomId);
+      }
+    });
+
+    socket.on("kickPlayer", (playerId) => {
+      if (!currentRoomId) return;
+      const room = rooms[currentRoomId];
+      const host = room.players.find((p: any) => p.id === socket.id);
+      if (!host?.isHost) return;
+
+      const targetSocket = io.sockets.sockets.get(playerId);
+      if (targetSocket) {
+        targetSocket.emit("error", "你已被房主移出房間");
+        targetSocket.disconnect();
       }
     });
 
@@ -434,12 +452,34 @@ async function startServer() {
       // Check if it was a player
       const playerIndex = room.players.findIndex((p: any) => p.id === socket.id);
       if (playerIndex !== -1) {
-        const wasHost = room.players[playerIndex].isHost;
+        const player = room.players[playerIndex];
+        const wasHost = player.isHost;
+        const wasCurrentTurn = room.currentTurnIndex === playerIndex;
+
         room.players.splice(playerIndex, 1);
-        if (wasHost && room.players.length > 0) {
-          room.players[0].isHost = true;
+        room.lastAction = `${player.name} 離開了遊戲。`;
+
+        if (room.players.length === 0) {
+          resetRoomStats(currentRoomId);
+        } else {
+          if (wasHost) {
+            room.players[0].isHost = true;
+          }
+
+          if (room.gameState === "playing") {
+            if (wasCurrentTurn) {
+              // If it was their turn, move to the next player and start a new turn
+              room.currentTurnIndex = room.currentTurnIndex % room.players.length;
+              startNewTurn(currentRoomId);
+            } else if (playerIndex < room.currentTurnIndex) {
+              // Adjust index if someone before the current player left
+              room.currentTurnIndex--;
+            }
+          } else {
+            // In waiting state, just ensure index is valid
+            room.currentTurnIndex = room.players.length > 0 ? room.currentTurnIndex % room.players.length : 0;
+          }
         }
-        room.currentTurnIndex = room.players.length > 0 ? room.currentTurnIndex % room.players.length : 0;
         broadcastRoomState(currentRoomId);
         return;
       }
