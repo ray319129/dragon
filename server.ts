@@ -88,23 +88,18 @@ async function startServer() {
       room.turnTimeout = null;
     }
 
-    if (room.gameState === "playing") {
+    if (room.gameState === "playing" && room.currentCards.card3Flipped) {
       room.turnStartTime = Date.now();
       room.turnTimeout = setTimeout(() => {
         const currentPlayer = room.players[room.currentTurnIndex];
         if (currentPlayer) {
-          if (room.currentCards.card3Flipped) {
-            // Auto next turn
-            room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
-            startNewTurn(roomId);
-          } else {
-            // Auto skip
-            room.lastAction = `${currentPlayer.name} 超時，系統自動跳過。`;
-            room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
-            startNewTurn(roomId);
-          }
+          // Auto next turn
+          room.currentTurnIndex = (room.currentTurnIndex + 1) % room.players.length;
+          startNewTurn(roomId);
         }
       }, 5000);
+    } else {
+      room.turnStartTime = null;
     }
   }
 
